@@ -1,0 +1,184 @@
+---
+title: "Data Science Capstone Milestone Report"
+author: "Rishab Ravi"
+output: html_document
+---
+
+#Background
+This report acts as a starting point for the Data Science Capstone project.  
+The data used in this analysis can be found  [here](https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip)  
+What follows is an exploratory analysis of the data, to help get a better sense of the data.  
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+#library imports
+library(tm)
+library(RWeka)
+library(stringi)
+library(ggplot2)
+library(wordcloud)
+```
+
+```{r echo=FALSE, warning=FALSE}
+#1. Reading files:
+#Blogs
+fileB <- file("en_US.blogs.txt","rb")
+blogsData <- readLines(fileB, encoding = "UTF-8", skipNul = T)
+close(fileB)
+#News
+fileN <- file("en_US.news.txt","rb")
+newsData <- readLines(fileN, encoding = "UTF-8", skipNul = T)
+close(fileN)
+#Twitter
+fileT <- file("en_US.twitter.txt","rb")
+twitterData <- readLines(fileT, encoding = "UTF-8", skipNul = T)
+close(fileT)
+```
+
+
+
+#1. Summary of files
+Summary of the three sources is represented below:  
+The sizes were determined with the help of the available *stringi* package for R.  
+```{r echo=FALSE, warning=FALSE}
+#2. Summary of files:
+
+#word count
+wordsB <- sum(stri_count_words(blogsData))
+wordsN <- sum(stri_count_words(newsData))
+wordsT <- sum(stri_count_words(twitterData))
+#line count
+linesB <- length(blogsData)
+linesN <- length(newsData)
+linesT <- length(twitterData)
+#file size (MB)
+sizeB <- file.info("en_US.blogs.txt")$size/1024^2
+sizeN <- file.info("en_US.news.txt")$size/1024^2
+sizeT <- file.info("en_US.twitter.txt")$size/1024^2
+#summary table
+dataSummary <- data.frame(Data = c("blogs","news","twitter"),
+                          wordCount = c(wordsB,wordsN,wordsT),
+                          lineCount = c(linesB,linesN,linesT),
+                          fileSize_MB = c(sizeB,sizeN,sizeT))
+
+```
+
+
+```{r echo=FALSE}
+dataSummary
+```
+
+#2. Data pre-processing
+Each of the three data sources is first randomly sampled with a size of 1% of their original set. This reduces computation time drastically.  
+The sampled data is then combined to give us our data frame for tokenization.  
+```{r echo=FALSE}
+#sampling (1% of original dataset)
+sampleB <- sample(blogsData, length(blogsData)*0.01)
+sampleN <- sample(newsData, length(newsData)*0.01)
+sampleT <- sample(twitterData, length(twitterData)*0.01)
+
+#merging all three-
+mergedDS <- c(sampleB,sampleN,sampleT)
+
+```
+
+The merged and sampled data is then cleaned with the help of the *tm* package. Case sensitivity of the words, stopwords and whitespaces are ignored.  
+Profanity was filtered out with the help of a text file obtained [here](https://www.freewebheaders.com/full-list-of-bad-words-banned-by-google/)
+```{r message=FALSE, warning=FALSE}
+#Tokenization
+#set up source and corpus
+data_source <- VectorSource(mergedDS)
+dataCorpus <- Corpus(data_source)
+#cleaning
+dataCorpus <- tm_map(dataCorpus, content_transformer(stri_trans_tolower))
+dataCorpus <- tm_map(dataCorpus, removePunctuation)
+dataCorpus <- tm_map(dataCorpus, stripWhitespace)
+
+#Profanity text file:
+profanity <- read.table("profanityList.txt", sep = "\n")
+profanities <- rep(profanity$V1)
+
+dataCorpus <- tm_map(dataCorpus, removeWords, stopwords("english"))
+dataCorpus <- tm_map(dataCorpus, removeWords, profanities)
+
+```
+
+
+#3. Exploratory Analysis
+
+The **15** most frequently occuring words, bigrams and trigrams are determined with the help of the *RWeka* package.   
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+options(mc.cores = 1)
+#1-gram tokenizer:
+onegram <- NGramTokenizer(dataCorpus, Weka_control(min = 1, max = 1))
+onegramDF <- data.frame(table(onegram))
+onegramSort <- onegramDF[order(onegramDF$Freq, decreasing = T),]
+data1 <- data.frame(v1 = as.vector(onegramSort$onegram), 
+                     v2 = as.numeric(onegramSort$Freq))
+names(data1) <- c("word","freq")
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+#2-gram tokenizer:
+bigram <- NGramTokenizer(dataCorpus, Weka_control(min = 2, max = 2))
+bigramDF <- data.frame(table(bigram))
+bigramSort <- bigramDF[order(bigramDF$Freq, decreasing = T),]
+data2 <- data.frame(v1 = as.vector(bigramSort$bigram), 
+                    v2 = as.numeric(bigramSort$Freq))
+names(data2) <- c("word","freq")
+
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+#3-gram tokenizer:
+trigram <- NGramTokenizer(dataCorpus, Weka_control(min = 3, max = 3))
+trigramDF <- data.frame(table(trigram))
+trigramSort <- trigramDF[order(trigramDF$Freq, decreasing = T),]
+data3 <- data.frame(v1 = as.vector(trigramSort$trigram), 
+                    v2 = as.numeric(trigramSort$Freq))
+names(data3) <- c("word","freq")
+```
+
+
+##Plots
+The below plots represent the 15 most frequently occuring *unigrams, bigrams and trigrams* in the sampled data.  
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+#1gram
+ggplot(head(data1,15), aes(reorder(word,-freq), freq)) + 
+         geom_bar(stat = "identity", fill = rainbow(15)) + geom_text(aes(label=freq), 
+                                              vjust = -0.5) + 
+         ggtitle("Unigrams Frequency") + xlab("Word") + ylab("Frequency")
+
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+#2gram
+ggplot(data = head(data2,15), aes(x = reorder(word, freq), y = freq)) +
+  geom_histogram(aes(fill = freq), stat = "identity") +
+  coord_flip() + ggtitle("Bigrams Frequency") + 
+  labs(x = "Word") +
+  theme_bw()
+
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+#3gram
+ggplot(head(data3,15), aes(x = reorder(word, freq), y = freq, fill = factor(freq))) + 
+         geom_bar(stat = "identity") + coord_flip() +  
+  geom_text(aes(label=freq), vjust = -0.5) + ggtitle("Trigrams Frequency") +  xlab("Word") + ylab("Frequency") + scale_fill_brewer(palette = "Greens")
+       
+
+```
+
+###Wordcloud:  
+```{r echo=FALSE, warning=FALSE}
+#wordcloud
+wordcloud(data1$word[1:30],data1$freq[1:30], scale = c(2.5,2.5),colors = brewer.pal(9,"Oranges"))
+```
+
+
+#4. Further Development
+The final objective is to build a shiny app featuring predictive text capabilities. The next step would be to come up with predictive models using ML.  
+
+##Appendix
+The Rmd file for this document may be viewed [here](https://github.com/heisenberg967/DSCapstone)  
